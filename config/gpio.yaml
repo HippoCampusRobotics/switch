@@ -1,0 +1,12 @@
+gpios: [6, 13, 19, 26, 12, 16, 20, 21]
+namespaces: [uuv02, uuv03]
+gpio_map:
+  "6": arm0
+  "13": disarm0
+  "19": reboot0
+  "26": toggle_distance_control0
+  "12": arm1
+  "16": disarm1
+  "20": reboot1
+  "21": toggle_distance_control1
+# order: green, blue, yellow, black

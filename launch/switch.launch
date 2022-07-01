@@ -1,0 +1,6 @@
+<launch>
+    <arg name="param_file" default="$(find switch)/config/gpio.yaml" />
+    <node name="switch" pkg="switch" type="switch_node.py">
+        <rosparam file="$(arg param_file)" />
+    </node>
+</launch>
