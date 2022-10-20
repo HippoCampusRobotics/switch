@@ -19,6 +19,9 @@
   <author email="thies.lennart.alff@tuhh.de">Thies Lennart Alff</author>
 
   <buildtool_depend>catkin</buildtool_depend>
+  <depend>message_generation</depend>
+  <depend>message_runtime</depend>
+  <depend>std_msgs</depend>
   <build_depend>hippocampus_common</build_depend>
   <build_depend>hippocampus_msgs</build_depend>
   <build_export_depend>hippocampus_common</build_export_depend>

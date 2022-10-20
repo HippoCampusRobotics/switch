@@ -1,0 +1,6 @@
+<launch>
+    <arg name="config_file" />
+    <node name="button" pkg="switch" type="button.py" output="screen">
+        <rosparam command="load" file="$(arg config_file)" />
+    </node>
+</launch>

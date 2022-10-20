@@ -1,6 +1,28 @@
 <launch>
-    <arg name="param_file" default="$(find switch)/config/gpio.yaml" />
-    <node name="switch" pkg="switch" type="switch_node.py">
-        <rosparam file="$(arg param_file)" />
-    </node>
+    <arg name="vehicle_name" default="bluerov" />
+    <arg name="namespace_prefix" default="switch" />
+    <arg name="namespace" value="$(arg namespace_prefix)_$(arg vehicle_name)" />
+    <group ns="$(arg namespace)">
+        <!-- first set of buttons -->
+        <include file="$(find switch)/launch/button.launch">
+            <arg name="config_file" value="$(find switch)/config/button_0.yaml" />
+        </include>
+
+        <node name="sound" pkg="switch" type="sound.py" output="screen">
+            <rosparam file="$(find switch)/config/sound.yaml" />
+        </node>
+
+        <node name="led" pkg="switch" type="led.py" output="screen">
+            <param name="vehicle_name" value="$(arg vehicle_name)" />
+        </node>
+
+        <node name="button_handler" pkg="switch" type="button_handler.py" output="screen">
+            <param name="vehicle_name" value="$(arg vehicle_name)" />
+        </node>
+
+        <node name="battery_watcher" pkg="switch" type="battery_watcher.py" output="screen">
+            <param name="vehicle_name" value="$(arg vehicle_name)" />
+            <param name="n_cells" value="4" />
+        </node>
+    </group>
 </launch>
