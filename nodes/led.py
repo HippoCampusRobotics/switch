@@ -20,12 +20,25 @@ class Strip():
     ARMING_INDEX = 1
     BATTERY_INDEX = 2
 
+    COLOR_ARMED = Color(254, 0, 0)
+    COLOR_DISARMED = Color(0, 254, 0)
+
+    COLOR_BATTERY_GOOD = Color(0, 254, 0)
+    COLOR_BATTERY_MEDIUM = Color(254, 100, 0)
+    COLOR_BATTERY_BAD = Color(254, 0, 0)
+
+    COLOR_STATE_GOOD = Color(0, 254, 0)
+    COLOR_STATE_BAD = Color(254, 0, 0)
+    COLOR_OFF = Color(0, 0, 0)
+    COLOR_UNDEFINED = Color(0, 0, 254)
+
     def __init__(self):
         self.lock = threading.RLock()
         self.strip = PixelStrip(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA,
                                 LED_INVERT, 255, LED_CHANNEL)
         self.strip.begin()
         self.armed = False
+        self.t_arming_blinked = 0.0
 
     def blink_arming(self):
         with self.lock:
@@ -47,6 +60,11 @@ class Strip():
                 self.strip.show()
                 time.sleep(delay_per_pixel)
 
+    def switch_off(self):
+        for i in range(self.strip.numPixels()):
+            self.strip.setPixelColorRGB(i, 0, 0, 0)
+        self.strip.show()
+
     def set_status(self, good=False):
         with self.lock:
             self.strip.setPixelColorRGB(self.STATUS_INDEX,
@@ -54,44 +72,58 @@ class Strip():
                                         int(good) * 254, 0)
             self.strip.show()
 
-    def set_arming(self, armed=False):
+    def set_arming(
+        self,
+        time: float,
+        armed=False,
+    ):
         with self.lock:
             if armed != self.armed:
+                self.t_arming_blinked = time
                 self.armed = armed
                 if armed:
                     self.just_armed()
                 else:
                     self.just_disarmed()
+            else:
+                if not self.armed:
+                    self.just_disarmed()
+                if time - self.t_arming_blinked >= 1.0:
+                    self.blink_arming()
+
+    def set_arming_state_undefined(self):
+        with self.lock:
+            self.strip.setPixelColor(self.ARMING_INDEX, self.COLOR_UNDEFINED)
 
     def just_armed(self):
         with self.lock:
-            self.strip.setPixelColorRGB(self.ARMING_INDEX, 254, 0, 0)
-            self.strip.show()
+            self.blink_arming()
 
     def just_disarmed(self):
         with self.lock:
-            self.strip.setPixelColorRGB(self.ARMING_INDEX, 0, 254, 0)
+            self.strip.setPixelColor(self.ARMING_INDEX, self.COLOR_DISARMED)
             self.strip.show()
 
     def set_battery_good(self):
         with self.lock:
-            rospy.logwarn("Hello")
-            self.strip.setPixelColorRGB(self.BATTERY_INDEX, 0, 254, 0)
+            self.strip.setPixelColor(self.BATTERY_INDEX,
+                                     self.COLOR_BATTERY_GOOD)
             self.strip.show()
 
     def set_battery_medium(self):
         with self.lock:
-            self.strip.setPixelColorRGB(self.BATTERY_INDEX, 254, 254, 0)
+            self.strip.setPixelColor(self.BATTERY_INDEX,
+                                     self.COLOR_BATTERY_MEDIUM)
             self.strip.show()
 
     def set_battery_low(self):
         with self.lock:
-            self.strip.setPixelColorRGB(self.BATTERY_INDEX, 200, 0, 0)
+            self.strip.setPixelColor(self.BATTERY_INDEX, self.COLOR_BATTERY_BAD)
             self.strip.show()
 
-    def set_battery_none(self):
+    def set_battery_undefined(self):
         with self.lock:
-            self.strip.setPixelColorRGB(self.BATTERY_INDEX, 0, 0, 0)
+            self.strip.setPixelColor(self.BATTERY_INDEX, self.COLOR_UNDEFINED)
             self.strip.show()
 
 
@@ -116,6 +148,10 @@ class LedNode(Node):
         self.battery_sub = rospy.Subscriber("battery_state", BatteryState,
                                             self.on_battery_state)
 
+        topic = f"/{self.vehicle_namespace}/arming_state"
+        self.arming_state_sub = rospy.Subscriber(topic, Bool,
+                                                 self.on_arming_state)
+
     def on_battery_state(self, msg: BatteryState):
         with self.lock:
             self.battery["value"] = msg.state
@@ -136,10 +172,10 @@ class LedNode(Node):
         elif self.battery["value"] == BatteryState.BAD:
             self.strip.set_battery_low()
         elif self.battery["value"] == BatteryState.UNSET:
-            self.strip.set_battery_none()
+            self.strip.set_battery_undefined()
             rospy.logwarn("BatteryState is UNSET")
         elif self.battery["value"] == BatteryState.UNAVAILABLE:
-            self.strip.set_battery_none()
+            self.strip.set_battery_undefined()
             rospy.logwarn("BatteryState is UNAVAILABLE")
         else:
             rospy.logwarn("Unhandled BatteryState: %d", self.battery["value"])
@@ -147,31 +183,33 @@ class LedNode(Node):
     def run(self):
         rate = rospy.Rate(5)
         while not rospy.is_shutdown():
-            rate.sleep()
             now = rospy.get_time()
             timed_out = False
             with self.lock:
                 if self.battery["updated"]:
                     self.battery["updated"] = False
-                    rospy.loginfo("Updating battery LED")
                     self.update_battery()
                 else:
                     if now - self.battery["stamp"] > 5.0:
                         rospy.logwarn_throttle(2.0, "BatteryState timed out.")
+                        self.strip.set_battery_undefined()
                         timed_out = True
 
                 if self.arming["updated"]:
                     self.arming["updated"] = False
-                    self.strip.set_arming(self.arming["value"])
+                    self.strip.set_arming(now, self.arming["value"])
                 else:
                     if now - self.arming["stamp"] > 5.0:
                         rospy.logwarn_throttle(2.0, "ArmingState timed out.")
+                        self.strip.set_arming_state_undefined()
                         timed_out = True
-
             self.strip.set_status(not timed_out)
+            rate.sleep()
 
     def on_shutdown(self):
-        self.strip.color_wipe(Color(0, 0, 0), 0)
+        print("Test")
+        self.strip.switch_off()
+        time.sleep(0.1)
 
 
 def main():
